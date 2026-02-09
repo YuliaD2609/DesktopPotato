@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Pet</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body class="pet-body">
+    <div id="pet" class="potato idle">
+        <img src="assets/potato_pet.png" alt="Potato Pet">
+    </div>
+    <script>
+        const { ipcRenderer } = require('electron');
+        const petElement = document.getElementById('pet');
+        const petImg = petElement.querySelector('img');
+
+        let animationInterval;
+        let frame = 0;
+
+        ipcRenderer.on('pet-state', (event, state, direction) => {
+            if (state === 'running') {
+                petElement.classList.remove('idle');
+                petElement.classList.add('running');
+
+                // Flip image based on direction
+                // User requested inversion: Left should be Right and vice versa
+                if (direction === 'left') {
+                    petElement.style.transform = 'scaleX(1)';
+                } else {
+                    petElement.style.transform = 'scaleX(-1)';
+                }
+
+                // Start animation if not already running
+                if (!animationInterval) {
+                    frame = 0;
+                    animationInterval = setInterval(() => {
+                        frame = 1 - frame; // Toggle between 0 and 1
+                        petImg.src = frame === 0 ? 'assets/running1.png' : 'assets/running2.png';
+                    }, 150); // Speed of animation
+                }
+
+            } else {
+                petElement.classList.remove('running');
+                petElement.classList.add('idle');
+
+                // Stop animation
+                if (animationInterval) {
+                    clearInterval(animationInterval);
+                    animationInterval = null;
+                    petImg.src = 'assets/potato_pet.png'; // Revert to idle image
+                }
+            }
+        });
+
+    </script>
+</body>
+
+</html>
