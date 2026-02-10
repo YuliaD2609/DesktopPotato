@@ -278,35 +278,43 @@ ipcMain.on('toggle-always-on', (event, isAlwaysOn) => {
 
 // --- Small Potatoes Logic ---
 
-let smallPotato1, smallPotato2;
+let smallPotatoes = []; // Array of { win, state, type, id }
 let smallPotatoInterval;
 
-const POTATO_SIZE = 60; // Smaller size (assuming main pet is 100)
-// Actually user asked for "small potatoes 1 and 2". 
-// Let's assume they are smaller than the main one.
+const POTATO_SIZE = 100;
+const INTERACTION_DURATION = 20;
+const PAUSE_DURATION = 10;
+const WALK_AWAY_DURATION = 20;
 
-// State for small potatoes
-let sp1State = { x: 0, y: 0, val: 0, direction: 'right', action: 'idle', interactTimer: 0 };
-let sp2State = { x: 0, y: 0, val: 0, direction: 'left', action: 'idle', interactTimer: 0 };
+
 
 function createSmallPotatoes() {
-  if (smallPotato1 || smallPotato2) return;
+  if (smallPotatoes.length > 0) return;
 
   const display = screen.getPrimaryDisplay();
-  const workArea = display.workArea; // Excludes taskbar
-  const bounds = display.bounds;
+  const workArea = display.workArea;
+  const bounds = display.bounds; // Use bounds for full width if needed, but workArea is safer for bottom taskbar
 
-  // Position at bottom-left of work area
-  const GROUND_OFFSET = 0; // Sit on taskbar line
+  // Create 4 potatoes: 2 Type 1, 2 Type 2
+  // Positions spread out
+  const startPositions = [
+    { x: 20, type: 1 },
+    { x: 100, type: 2 },
+    { x: 300, type: 1 },
+    { x: 400, type: 2 }
+  ];
 
-  // Initial positions
-  sp1State.x = 20;
-  sp1State.y = workArea.y + workArea.height - POTATO_SIZE - GROUND_OFFSET;
+  startPositions.forEach((pos, index) => {
+    const state = {
+      x: pos.x,
+      y: workArea.y + workArea.height - POTATO_SIZE,
+      val: 0,
+      direction: pos.type === 1 ? 'right' : 'left',
+      action: 'idle',
+      interactTimer: 0,
+      partnerId: null // To track who they are interacting with
+    };
 
-  sp2State.x = 100;
-  sp2State.y = workArea.y + workArea.height - POTATO_SIZE - GROUND_OFFSET;
-
-  const createMsg = (state, windowName) => {
     const win = new BrowserWindow({
       width: POTATO_SIZE,
       height: POTATO_SIZE,
@@ -326,23 +334,23 @@ function createSmallPotatoes() {
 
     win.loadFile('small_potato.html');
     win.setIgnoreMouseEvents(true);
-    return win;
-  };
 
-  smallPotato1 = createMsg(sp1State, 'sp1');
-  smallPotato2 = createMsg(sp2State, 'sp2');
+    // Unique ID for internal tracking
+    const potatoObj = { win, state, type: pos.type, id: index };
+    smallPotatoes.push(potatoObj);
 
-  // Initial images
-  smallPotato1.webContents.once('did-finish-load', () => {
-    smallPotato1.webContents.send('set-image', path.join(__dirname, 'assets/1.png'));
+    win.webContents.once('did-finish-load', () => {
+      const img = pos.type === 1 ? '1.png' : '2.png';
+      win.webContents.send('set-image', path.join(__dirname, 'assets', img));
+      if (pos.type === 2) win.webContents.send('set-direction', 'left');
+    });
+
+    win.on('closed', () => {
+      // Remove from array if closed individually (improbable but safe)
+      const idx = smallPotatoes.findIndex(p => p.id === potatoObj.id);
+      if (idx !== -1) smallPotatoes.splice(idx, 1);
+    });
   });
-  smallPotato2.webContents.once('did-finish-load', () => {
-    smallPotato2.webContents.send('set-direction', 'left'); // Face left initially
-    smallPotato2.webContents.send('set-image', path.join(__dirname, 'assets/2.png'));
-  });
-
-  smallPotato1.on('closed', () => smallPotato1 = null);
-  smallPotato2.on('closed', () => smallPotato2 = null);
 
   startSmallPotatoLoop();
 }
@@ -351,10 +359,13 @@ function startSmallPotatoLoop() {
   if (smallPotatoInterval) clearInterval(smallPotatoInterval);
 
   smallPotatoInterval = setInterval(() => {
-    if (!smallPotato1 || !smallPotato2 || smallPotato1.isDestroyed() || smallPotato2.isDestroyed()) return;
+    if (smallPotatoes.length === 0) return;
 
-    updateSmallPotato(smallPotato1, sp1State, 1);
-    updateSmallPotato(smallPotato2, sp2State, 2);
+    smallPotatoes.forEach(p => {
+      if (!p.win.isDestroyed()) {
+        updateSmallPotato(p);
+      }
+    });
 
     checkInteraction();
     checkMouseAvoidance();
@@ -362,49 +373,252 @@ function startSmallPotatoLoop() {
   }, 100);
 }
 
-function updateSmallPotato(win, state, id) {
-  if (state.action === 'interacting') return; // Don't move if interacting
+function stopSmallPotatoes() {
+  if (smallPotatoInterval) {
+    clearInterval(smallPotatoInterval);
+    smallPotatoInterval = null;
+  }
+  smallPotatoes.forEach(p => {
+    if (p.win && !p.win.isDestroyed()) p.win.close();
+  });
+  smallPotatoes = [];
+}
 
-  // Random move logic
-  // 5% chance to change action (idle <-> walk)
+function checkInteraction() {
+  // Check pairs
+  // We only want interactions between Type 1 and Type 2
+  // And both must be 'idle' or 'walking' (not already interacting/hidden/walking_away)
+
+  // Double loop to find pairs
+  for (let i = 0; i < smallPotatoes.length; i++) {
+    const p1 = smallPotatoes[i];
+    if (isBusy(p1)) continue;
+
+    for (let j = i + 1; j < smallPotatoes.length; j++) {
+      const p2 = smallPotatoes[j];
+      if (isBusy(p2)) continue;
+
+      // Must be different types for this specific interaction logic (1 acts, 2 listens)
+      if (p1.type === p2.type) continue;
+
+      const dx = Math.abs(p1.state.x - p2.state.x);
+      if (dx < 40) {
+        if (Math.random() < 0.1) {
+          // Interaction!
+          // Identify who is Type 1 (actor) and Type 2 (listener/hidden)
+          const actor = p1.type === 1 ? p1 : p2;
+          const listener = p1.type === 1 ? p2 : p1;
+          startInteraction(actor, listener);
+        }
+      }
+    }
+  }
+}
+
+function isBusy(p) {
+  return p.state.action !== 'idle' && !p.state.action.startsWith('walk');
+}
+
+function startInteraction(actor, listener) {
+  // Face each other
+  if (actor.state.x < listener.state.x) {
+    actor.state.direction = 'right';
+    listener.state.direction = 'left';
+  } else {
+    actor.state.direction = 'left';
+    listener.state.direction = 'right';
+  }
+
+  // Hide listener
+  if (listener.win && !listener.win.isDestroyed()) listener.win.hide();
+  listener.state.action = 'hidden';
+  listener.state.partnerId = actor.id;
+
+  // Actor starts stage 1
+  actor.state.action = 'interacting_stage1';
+  actor.state.partnerId = listener.id;
+  actor.state.interactTimer = INTERACTION_DURATION;
+
+  // Sync timer for listener just in case
+  listener.state.interactTimer = INTERACTION_DURATION;
+
+  updateInteractionImages(actor, listener);
+}
+
+function updateInteractionImages(actor, listener) {
+  if (!actor.win.isDestroyed()) {
+    if (actor.state.action === 'interacting_stage1') {
+      actor.win.webContents.send('set-image', path.join(__dirname, 'assets/interacting 1.png'));
+    } else if (actor.state.action === 'interacting_stage2') {
+      actor.win.webContents.send('set-image', path.join(__dirname, 'assets/interacting 2.png'));
+    } else if (actor.state.action === 'reappearing') {
+      actor.win.webContents.send('set-image', path.join(__dirname, 'assets/1.png'));
+    }
+    actor.win.webContents.send('set-direction', actor.state.direction);
+
+    // Enforce size
+    actor.win.setBounds({
+      x: Math.round(actor.state.x),
+      y: Math.round(actor.state.y),
+      width: POTATO_SIZE,
+      height: POTATO_SIZE
+    });
+  }
+
+  if (!listener.win.isDestroyed()) {
+    if (listener.state.action === 'reappearing') {
+      if (!listener.win.isVisible()) listener.win.show();
+      listener.win.webContents.send('set-image', path.join(__dirname, 'assets/2.png'));
+      listener.win.webContents.send('set-direction', listener.state.direction);
+
+      // Enforce size
+      listener.win.setBounds({
+        x: Math.round(listener.state.x),
+        y: Math.round(listener.state.y),
+        width: POTATO_SIZE,
+        height: POTATO_SIZE
+      });
+    }
+  }
+}
+
+function handleInteractionTick(p) {
+  // Only the ACTOR (Type 1) drives the state in this logic, 
+  // or we handle both. Let's let the ACTOR drive it since they are linked by partnerId.
+  // If we are Type 2 (hidden/listener), we just wait unless we are 'reappearing'.
+
+  if (p.type === 2 && p.state.action === 'hidden') return; // Passive
+
+  const partner = smallPotatoes.find(pot => pot.id === p.state.partnerId);
+  if (!partner) {
+    // Partner gone? Reset.
+    resetPotato(p);
+    return;
+  }
+
+  p.state.interactTimer--;
+
+  if (p.state.interactTimer <= 0) {
+    if (p.state.action === 'interacting_stage1') {
+      p.state.action = 'interacting_stage2';
+      p.state.interactTimer = INTERACTION_DURATION;
+      updateInteractionImages(p, partner);
+    } else if (p.state.action === 'interacting_stage2') {
+      // Reappear phase
+      p.state.action = 'reappearing';
+      partner.state.action = 'reappearing';
+      p.state.interactTimer = PAUSE_DURATION;
+      updateInteractionImages(p, partner);
+    } else if (p.state.action === 'reappearing') {
+      // Walk away
+      startWalkAway(p, partner);
+    } else if (p.state.action === 'walking_away') {
+      // Done walking away
+      p.state.action = 'idle';
+      partner.state.action = 'idle';
+      p.state.partnerId = null;
+      partner.state.partnerId = null;
+    }
+  }
+}
+
+function startWalkAway(p1, p2) {
+  p1.state.action = 'walking_away';
+  p2.state.action = 'walking_away';
+  p1.state.interactTimer = WALK_AWAY_DURATION;
+  p2.state.interactTimer = WALK_AWAY_DURATION;
+
+  // Ensure visible
+  if (!p1.win.isVisible()) p1.win.show();
+  if (!p2.win.isVisible()) p2.win.show();
+
+  // Directions
+  if (p1.state.x < p2.state.x) {
+    p1.state.direction = 'left';
+    p2.state.direction = 'right';
+  } else {
+    p1.state.direction = 'right';
+    p2.state.direction = 'left';
+  }
+}
+
+function resetPotato(p) {
+  p.state.action = 'idle';
+  p.state.partnerId = null;
+  if (p.win && !p.win.isDestroyed() && !p.win.isVisible()) p.win.show();
+}
+
+function updateSmallPotato(p) {
+  // Handle interaction states specially
+  if (p.state.action.startsWith('interacting') || p.state.action === 'reappearing' || p.state.action === 'walking_away' || p.state.action === 'hidden') {
+    handleInteractionTick(p);
+
+    // Actually move if walking away
+    if (p.state.action === 'walking_away') {
+      movePotato(p, 2);
+    }
+    return;
+  }
+
+  // Normal Random Logic
   if (Math.random() < 0.05) {
     const r = Math.random();
-    if (r < 0.3) state.action = 'idle';
+    if (r < 0.3) p.state.action = 'idle';
     else if (r < 0.65) {
-      state.action = 'walk_left';
-      state.direction = 'left';
+      p.state.action = 'walk_left';
+      p.state.direction = 'left';
     } else {
-      state.action = 'walk_right';
-      state.direction = 'right';
+      p.state.action = 'walk_right';
+      p.state.direction = 'right';
     }
   }
 
-  // Visual update freq
-  // Update image based on action
-  let img = id + '.png'; // Default idle
-  if (state.action.startsWith('walk')) {
-    img = `walking_${id}.png`;
+  let img = p.type === 1 ? '1.png' : '2.png';
+  if (p.state.action.startsWith('walk')) {
+    img = `walking_${p.type}.png`;
+    movePotato(p, 2);
+  } else {
+    // Just visual update for stationary
+    p.win.webContents.send('set-image', path.join(__dirname, 'assets', img));
+    p.win.webContents.send('set-direction', p.state.direction);
+  }
+}
+
+function movePotato(p, speed) {
+  if (p.state.direction === 'left') p.state.x -= speed;
+  else p.state.x += speed;
+
+  // Bounds
+  const maxWidth = screen.getPrimaryDisplay().workAreaSize.width - POTATO_SIZE;
+  if (p.state.x < 0) {
+    p.state.x = 0;
+    if (p.state.action !== 'walking_away') {
+      p.state.action = 'walk_right';
+      p.state.direction = 'right';
+    }
+  }
+  if (p.state.x > maxWidth) {
+    p.state.x = maxWidth;
+    if (p.state.action !== 'walking_away') {
+      p.state.action = 'walk_left';
+      p.state.direction = 'left';
+    }
   }
 
-  // Send updates
-  win.webContents.send('set-image', path.join(__dirname, 'assets', img));
-  win.webContents.send('set-direction', state.direction);
-
-  // Move
-  const speed = 2; // px per tick
-  if (state.action === 'walk_left') state.x -= speed;
-  if (state.action === 'walk_right') state.x += speed;
-
-  // Bounds (0 to 400)
-  if (state.x < 0) { state.x = 0; state.action = 'walk_right'; }
-  if (state.x > 400) { state.x = 400; state.action = 'walk_left'; }
-
-  win.setBounds({
-    x: Math.round(state.x),
-    y: Math.round(state.y),
+  p.win.setBounds({
+    x: Math.round(p.state.x),
+    y: Math.round(p.state.y),
     width: POTATO_SIZE,
     height: POTATO_SIZE
   });
+
+  // Update Image during move
+  let img = p.type === 1 ? '1.png' : '2.png';
+  if (p.state.action.startsWith('walk') || p.state.action === 'walking_away') {
+    img = `walking_${p.type}.png`;
+  }
+  p.win.webContents.send('set-image', path.join(__dirname, 'assets', img));
+  p.win.webContents.send('set-direction', p.state.direction);
 }
 
 function checkMouseAvoidance() {
@@ -412,112 +626,46 @@ function checkMouseAvoidance() {
   const avoidDist = 150;
   const runSpeed = 8;
 
-  [
-    { win: smallPotato1, state: sp1State, id: 1 },
-    { win: smallPotato2, state: sp2State, id: 2 }
-  ].forEach(p => {
-    // Check intersection AND allow running away even if interaction started
-    if (p.state.action.startsWith('interacting') && p.state.action !== 'scared') {
-      const dx = p.state.x + POTATO_SIZE / 2 - cursor.x;
-      const dy = p.state.y + POTATO_SIZE / 2 - cursor.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
+  smallPotatoes.forEach(p => {
+    if (p.state.action === 'hidden') return; // Can't see ghost potatoes
 
-      if (dist > avoidDist) return; // Ignore if far away
-    }
-    // If not interacting, we proceed. If interacting and close, we proceed below to interrupt.
-
-    const dx = p.state.x + POTATO_SIZE / 2 - cursor.x;
-    const dy = p.state.y + POTATO_SIZE / 2 - cursor.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+    const dxCenter = p.state.x + POTATO_SIZE / 2 - cursor.x;
+    const dyCenter = p.state.y + POTATO_SIZE / 2 - cursor.y;
+    const dist = Math.sqrt(dxCenter * dxCenter + dyCenter * dyCenter);
 
     if (dist < avoidDist) {
       // Interrupt interaction
-      if (p.state.action.startsWith('interacting')) {
-        p.state.interactStage = 0;
-        p.state.interactTimer = 0;
+      if (p.state.action.startsWith('interacting') || p.state.action === 'reappearing' || p.state.partnerId) {
+        // Break partnership
+        const partner = smallPotatoes.find(pot => pot.id === p.state.partnerId);
+        if (partner) resetPotato(partner);
+        resetPotato(p);
       }
 
-      // Run away horizontally
-      if (dx < 0) { // Cursor is to the right
+      // Run away
+      if (dxCenter < 0) { // Cursor right
         p.state.action = 'walk_left';
-        p.state.x -= runSpeed;
         p.state.direction = 'left';
-      } else { // Cursor is to the left
+        p.state.x -= runSpeed;
+      } else {
         p.state.action = 'walk_right';
-        p.state.x += runSpeed;
         p.state.direction = 'right';
+        p.state.x += runSpeed;
       }
 
-      if (p.state.x < 0) p.state.x = 0;
-      // Expand bounds if running away
-      if (p.state.x > 800) p.state.x = 800;
+      // Bounds check only (movePotato handles display update usually, but we need force update here)
+      // Re-using movePotato logic would be cleaner but let's just stick to raw updates for verify consistency or call movePotato with 0 speed to update? 
+      // Better to just invoke movePotato logic:
 
-      try {
-        p.win.setBounds({ x: Math.round(p.state.x), y: Math.round(p.state.y), width: POTATO_SIZE, height: POTATO_SIZE });
-        p.win.webContents.send('set-image', path.join(__dirname, `assets/walking_${p.id}.png`));
-        p.win.webContents.send('set-direction', p.state.direction);
-      } catch (e) { }
+      // Actually, let's keep it simple and explicit here to ensure the 'run' speed applies.
+      if (p.state.x < 0) p.state.x = 0;
+      const maxWidth = screen.getPrimaryDisplay().workAreaSize.width - POTATO_SIZE;
+      if (p.state.x > maxWidth) p.state.x = maxWidth;
+
+      p.win.setBounds({ x: Math.round(p.state.x), y: Math.round(p.state.y), width: POTATO_SIZE, height: POTATO_SIZE });
+      p.win.webContents.send('set-image', path.join(__dirname, `assets/walking_${p.type}.png`));
+      p.win.webContents.send('set-direction', p.state.direction);
     }
   });
 }
 
-function checkInteraction() {
-  if (sp1State.action === 'interacting' || sp2State.action === 'interacting') {
-    sp1State.interactTimer--;
-    if (sp1State.interactTimer <= 0) {
-      // End interaction
-      sp1State.action = 'idle';
-      sp2State.action = 'idle';
-    }
-    return;
-  }
-
-  // Distance between them
-  const dx = Math.abs(sp1State.x - sp2State.x);
-  if (dx < 40) { // Close enough
-    // 10% chance to interact when close
-    if (Math.random() < 0.1) {
-      startInteraction();
-    }
-  }
-}
-
-function stopSmallPotatoes() {
-  if (smallPotatoInterval) {
-    clearInterval(smallPotatoInterval);
-    smallPotatoInterval = null;
-  }
-  if (smallPotato1 && !smallPotato1.isDestroyed()) {
-    smallPotato1.close();
-  }
-  if (smallPotato2 && !smallPotato2.isDestroyed()) {
-    smallPotato2.close();
-  }
-  smallPotato1 = null;
-  smallPotato2 = null;
-}
-
-function startInteraction() {
-  sp1State.action = 'interacting';
-  sp2State.action = 'interacting';
-  sp1State.interactTimer = 50; // 5 seconds (50 * 100ms)
-
-  // Face each other
-  if (sp1State.x < sp2State.x) {
-    sp1State.direction = 'right';
-    sp2State.direction = 'left';
-  } else {
-    sp1State.direction = 'left';
-    sp2State.direction = 'right';
-  }
-
-  // Ensure windows exist before sending
-  if (smallPotato1 && !smallPotato1.isDestroyed()) {
-    smallPotato1.webContents.send('set-direction', sp1State.direction);
-    smallPotato1.webContents.send('set-image', path.join(__dirname, 'assets/interacting 1.png'));
-  }
-  if (smallPotato2 && !smallPotato2.isDestroyed()) {
-    smallPotato2.webContents.send('set-direction', sp2State.direction);
-    smallPotato2.webContents.send('set-image', path.join(__dirname, 'assets/interacting 2.png'));
-  }
-}
