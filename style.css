@@ -66,4 +66,24 @@ h1 {
     /* mix-blend-mode: multiply; */
 }
 
-/* Animations Removed for stability */
+/* Settings Styles */
+.settings-container {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+}
+
+.small-checkbox {
+    transform: scale(0.8);
+    cursor: pointer;
+}
+
+.clock-icon {
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+}

@@ -14,3 +14,22 @@ toggleBtn.addEventListener('click', () => {
         ipcRenderer.send('toggle-pet', false);
     }
 });
+
+const alwaysOnToggle = document.getElementById('alwaysOnToggle');
+
+// Request initial settings
+ipcRenderer.send('get-settings');
+
+ipcRenderer.on('settings-updated', (event, config) => {
+    alwaysOnToggle.checked = config.alwaysOn;
+
+    // If alwaysOn is true, the pet is running by default
+    if (config.alwaysOn) {
+        isRunning = true;
+        toggleBtn.textContent = 'Stop';
+    }
+});
+
+alwaysOnToggle.addEventListener('change', (e) => {
+    ipcRenderer.send('toggle-always-on', e.target.checked);
+});
