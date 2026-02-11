@@ -77,6 +77,74 @@ h1 {
     cursor: pointer;
 }
 
+.size-container {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    font-size: 12px;
+    color: #333;
+}
+
+#sizeSlider {
+    width: 80px;
+    /* Small width */
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: #FF69B4;
+    border-radius: 2px;
+    outline: none;
+}
+
+#sizeSlider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid #FF69B4;
+    cursor: pointer;
+}
+
+.count-container {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    /* Align right */
+    gap: 2px;
+    font-size: 12px;
+    color: #333;
+}
+
+#countSlider {
+    width: 80px;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: #FF69B4;
+    border-radius: 2px;
+    outline: none;
+}
+
+#countSlider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid #FF69B4;
+    cursor: pointer;
+}
+
 .small-checkbox {
     transform: scale(0.8);
     cursor: pointer;

@@ -16,6 +16,14 @@
         <input type="checkbox" id="alwaysOnToggle" class="small-checkbox">
         <span class="clock-icon">🕒</span>
     </div>
+    <div class="size-container">
+        <label for="sizeSlider">Size: <span id="sizeValue">100</span>px</label>
+        <input type="range" id="sizeSlider" min="50" max="150" value="100">
+    </div>
+    <div class="count-container">
+        <label for="countSlider">Count: <span id="countValue">4</span></label>
+        <input type="range" id="countSlider" min="0" max="20" step="2" value="4">
+    </div>
     <script src="renderer.js"></script>
 </body>
 

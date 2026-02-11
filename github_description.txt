@@ -1,0 +1,9 @@
+Desktop Potato 🥔
+
+A cute, interactive desktop pet application built with Electron. Watch as a family of small potatoes wanders around your screen, interacts with each other, and plays peek-a-boo!
+
+Features:
+-   Main Pet following your cursor 🖱️
+-   4 Small wandering potatoes 🥔
+-   Cute interactions and animations ✨
+-   Mouse avoidance behavior 🏃‍♂️💨

@@ -1,0 +1,11 @@
+node_modules
+node_modules
+node_modules
+out
+dist/
+build/
+release-builds/
+Potato Pet-win32-x64/
+*.exe
+*.asar
+*.zip
