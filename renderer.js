@@ -69,3 +69,55 @@ ipcRenderer.on('count-updated', (event, count) => {
     countSlider.value = count;
     countValue.textContent = count;
 });
+
+
+// --- Hardened Watermark Injection ---
+(function () {
+    const wmText = "yulia";
+    const wmId = "wm-" + Math.random().toString(36).substr(2, 9); // Random ID to avoid easy CSS targeting by ID
+
+    function createWatermark() {
+        const wm = document.createElement('div');
+        wm.id = wmId;
+        wm.textContent = wmText;
+
+        // Inline styles for hardness
+        wm.style.position = 'fixed';
+        wm.style.top = '5px';
+        wm.style.left = '5px';
+        wm.style.fontSize = '12px';
+        wm.style.fontWeight = 'bold';
+        wm.style.color = 'rgba(0, 0, 0, 0.2)';
+        wm.style.pointerEvents = 'none';
+        wm.style.userSelect = 'none';
+        wm.style.zIndex = '2147483647'; // Max z-index
+        wm.style.fontFamily = "'Courier New', Courier, monospace";
+
+        document.body.appendChild(wm);
+        return wm;
+    }
+
+    let wmElement = createWatermark();
+
+    // Watch for removal
+    const observer = new MutationObserver((mutations) => {
+        if (!document.body.contains(wmElement)) {
+            // Re-create if removed
+            wmElement = createWatermark();
+        } else {
+            // Optional: Watch for attribute changes (like hiding it)
+            if (wmElement.style.display === 'none' || wmElement.style.visibility === 'hidden' || wmElement.style.opacity === '0') {
+                wmElement.style.display = 'block';
+                wmElement.style.visibility = 'visible';
+                wmElement.style.opacity = '1';
+                wmElement.style.color = 'rgba(0, 0, 0, 0.2)'; // Restore color
+            }
+        }
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+    // Also observe the element itself for attribute changes
+    // (We need to re-attach observer if element is re-created, so we can't easily do it here for the *instance*, 
+    // but the body observer handles strict removal. To handle attribute tampering, we'd need a separate observer on wmElement.)
+    // For simplicity/performance, just ensuring presence is usually enough "unremovable" for this context.
+})();
